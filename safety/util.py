@@ -187,8 +187,8 @@ def filter_announcements(announcements, by_type='error'):
             announcement.get('type', '').lower() == by_type]
 
 
-def build_telemetry_data(telemetry = True, 
-                         command: Optional[str] = None, 
+def build_telemetry_data(telemetry = True,
+                         command: Optional[str] = None,
                          subcommand: Optional[str] = None) -> TelemetryModel:
     context = SafetyContext()
 
@@ -436,6 +436,10 @@ def html_alias(ctx, param, value):
         os.environ['SAFETY_OUTPUT'] = 'html'
         return value
 
+def junit_alias(ctx, param, value):
+    if value:
+        os.environ['SAFETY_OUTPUT'] = 'junit'
+        return value
 
 def bare_alias(ctx, param, value):
     if value:
@@ -721,7 +725,7 @@ class SafetyContext(metaclass=SingletonMeta):
     local_announcements = []
     scanned_full_path = []
     account = None
-
+    duration = None
 
 
 def sync_safety_context(f):
@@ -831,7 +835,7 @@ def get_hashes(dependency):
 def pluralize(word: str, count: int = 0) -> str:
     if count == 1:
         return word
-    
+
     default = {"was": "were", "this": "these", "has": "have"}
 
     if word in default:

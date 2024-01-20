@@ -1,0 +1,30 @@
+<testsuite name="safety-{{ json_data.report_meta.scan_target }}" tests="{{ json_data.junit.tests }}" skipped="{{ json_data.junit.skipped }}" errors="0" failures="{{ json_data.junit.failures }}" time="{{ json_data.report_meta.duration }}">
+{% for key, value in json_data.scanned_packages.items() -%}
+{% if key in json_data.affected_packages.keys() -%}
+<testcase classname="safety.package" name="{{ value.name }}" time="0">
+<failure type="safety.fail.package" message="Vulnerability found in {{ value.name }} ({{ value.version }})"/>
+</testcase>
+{% else -%}
+<testcase classname="safety.package" name="{{ value.name }}" time="0"/>
+{% endif -%}
+{% endfor -%}
+{% for data in json_data.ignored_vulnerabilities -%}
+<testcase classname="safety.vulnerability" name="{{ data.package_name }}-{{ data.vulnerability_id }}" time="0">
+<skipped type="safety.skip.vulnerability" message="Vulnerability {{ data.vulnerability_id }} for package {{data.package_name}} skipped by user : {{data.ignored_reason|default("-", true)}}">
+<![CDATA[More info : {{ data.more_info_url }}
+Vulnerability Id : {{ data.vulnerability_id }}]]>
+</skipped>
+</testcase>
+{% endfor -%}
+{% for data in json_data.vulnerabilities -%}
+<testcase classname="safety.vulnerability" name="{{ data.package_name }}-{{ data.vulnerability_id }}" time="0">
+<failure type="safety.fail.vulnerability" message="Vulnerability found in {{ data.package_name }}({{ data.analyzed_version }})">
+<![CDATA[More info : {{ data.more_info_url }}
+Vulnerability Id : {{ data.vulnerability_id }}
+Advisory : {{ data.advisory }}
+Published date : {{ data.published_date }}
+CVE : {{ data.CVE }}]]>
+</failure>
+</testcase>
+{% endfor -%}
+</testsuite>

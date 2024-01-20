@@ -4,6 +4,7 @@ import configparser
 from dataclasses import asdict
 from enum import Enum
 
+import time
 import json
 import logging
 import os
@@ -35,7 +36,7 @@ from safety.output_utils import should_add_nl
 from safety.safety import get_packages, read_vulnerabilities, process_fixes
 from safety.util import get_packages_licenses, initializate_config_dirs, output_exception, \
     MutuallyExclusiveOption, DependentOption, transform_ignore, SafetyPolicyFile, active_color_if_needed, \
-    get_processed_options, get_safety_version, json_alias, bare_alias, html_alias, SafetyContext, is_a_remote_mirror, \
+    get_processed_options, get_safety_version, junit_alias, json_alias, bare_alias, html_alias, SafetyContext, is_a_remote_mirror, \
     filter_announcements, get_fix_options
 from safety.scan.command import scan_project_app, scan_system_app
 from safety.auth.cli import auth_app
@@ -98,7 +99,7 @@ def clean_check_command(f):
         kwargs.pop('proxy_protocol', None)
         kwargs.pop('proxy_host', None)
         kwargs.pop('proxy_port', None)
-        
+
         if ctx.get_parameter_source("json_version") != click.core.ParameterSource.DEFAULT and not (
                 save_json or json or output == 'json'):
             raise click.UsageError(
@@ -119,8 +120,8 @@ def clean_check_command(f):
                                                                                proxy_dictionary=None)
             audit_and_monitor = (audit_and_monitor and server_audit_and_monitor)
 
-            kwargs.update({"auto_remediation_limit": auto_remediation_limit, 
-                           "policy_file":policy_file, 
+            kwargs.update({"auto_remediation_limit": auto_remediation_limit,
+                           "policy_file":policy_file,
                            "audit_and_monitor": audit_and_monitor})
 
         except SafetyError as e:
@@ -158,15 +159,18 @@ def clean_check_command(f):
 @click.option("ignore_unpinned_requirements", "--ignore-unpinned-requirements/--check-unpinned-requirements", "-iur",
               default=None, help="Check or ignore unpinned requirements found.")
 @click.option('--json', default=False, cls=MutuallyExclusiveOption, mutually_exclusive=["output", "bare"],
-              with_values={"output": ['screen', 'text', 'bare', 'json', 'html'], "bare": [True, False]}, callback=json_alias,
+              with_values={"output": ['screen', 'text', 'bare', 'json', 'html', 'junit'], "bare": [True, False]}, callback=json_alias,
+              hidden=True, is_flag=True, show_default=True)
+@click.option('--junit', default=False, cls=MutuallyExclusiveOption, mutually_exclusive=["output", "bare"],
+              with_values={"output": ['screen', 'text', 'bare', 'json', 'html', 'junit'], "bare": [True, False]}, callback=junit_alias,
               hidden=True, is_flag=True, show_default=True)
 @click.option('--html', default=False, cls=MutuallyExclusiveOption, mutually_exclusive=["output", "bare"],
-              with_values={"output": ['screen', 'text', 'bare', 'json', 'html'], "bare": [True, False]}, callback=html_alias,
+              with_values={"output": ['screen', 'text', 'bare', 'json', 'html', 'junit'], "bare": [True, False]}, callback=html_alias,
               hidden=True, is_flag=True, show_default=True)
 @click.option('--bare', default=False, cls=MutuallyExclusiveOption, mutually_exclusive=["output", "json"],
-              with_values={"output": ['screen', 'text', 'bare', 'json'], "json": [True, False]}, callback=bare_alias,
+              with_values={"output": ['screen', 'text', 'bare', 'json', 'junit'], "json": [True, False]}, callback=bare_alias,
               hidden=True, is_flag=True, show_default=True)
-@click.option('--output', "-o", type=click.Choice(['screen', 'text', 'json', 'bare', 'html'], case_sensitive=False),
+@click.option('--output', "-o", type=click.Choice(['screen', 'text', 'json', 'bare', 'html', 'junit'], case_sensitive=False),
               default='screen', callback=active_color_if_needed, envvar='SAFETY_OUTPUT')
 @click.option("--exit-code/--continue-on-error", default=True,
               help="Output standard exit codes. Default: --exit-code")
@@ -178,6 +182,9 @@ def clean_check_command(f):
               help="Project to associate this scan with on safetycli.com. "
                    "Defaults to a canonicalized github style name if available, otherwise unknown")
 @click.option("--save-json", default="", help="Path to where the output file will be placed; if the path is a"
+                                              " directory, Safety will use safety-report.json as filename."
+                                              " Default: empty")
+@click.option("--save-junit", default="", help="Path to where the output file will be placed; if the path is a"
                                               " directory, Safety will use safety-report.json as filename."
                                               " Default: empty")
 @click.option("--save-html", default="", help="Path to where the output file will be placed; if the path is a"
@@ -197,16 +204,18 @@ def clean_check_command(f):
 @click.pass_context
 @clean_check_command
 def check(ctx, db, full_report, stdin, files, cache, ignore, ignore_unpinned_requirements, output, json,
-          html, bare, exit_code, policy_file, audit_and_monitor, project,
-          save_json, save_html, apply_remediations,
+          junit, html, bare, exit_code, policy_file, audit_and_monitor, project,
+          save_json, save_junit, save_html, apply_remediations,
           auto_remediation_limit, no_prompt, json_version):
     """
     [underline][DEPRECATED][/underline] `check` has been replaced by the `scan` command, and will be unsupported beyond 1 May 2024.Find vulnerabilities at a target file or enviroment.
     """
     LOG.info('Running check command')
 
+    start_time = time.time()
+
     non_interactive = (not sys.stdout.isatty() and os.environ.get("SAFETY_OS_DESCRIPTION", None) != 'run')
-    silent_outputs = ['json', 'bare', 'html']
+    silent_outputs = ['json', 'bare', 'html', 'junit']
     is_silent_output = output in silent_outputs
     prompt_mode = bool(not non_interactive and not stdin and not is_silent_output) and not no_prompt
     kwargs = {'version': json_version} if output == 'json' else {}
@@ -273,6 +282,8 @@ def check(ctx, db, full_report, stdin, files, cache, ignore, ignore_unpinned_req
 
         post_processing_report = (save_json or audit_and_monitor or apply_remediations)
 
+        SafetyContext().duration = time.time() - start_time
+
         if post_processing_report:
             if apply_remediations and not is_silent_output:
                 # prompt_mode fixing after main check output if prompt is enabled.
@@ -292,6 +303,12 @@ def check(ctx, db, full_report, stdin, files, cache, ignore, ignore_unpinned_req
                 announcements, vulns, remediations, full_report, packages, fixes)
 
             safety.save_report(save_html, 'safety-report.html', html_report)
+
+        if save_junit:
+            junit_report = output_report if output == 'junit' else SafetyFormatter(output='junit').render_vulnerabilities(
+                announcements, vulns, remediations, full_report, packages, fixes)
+
+            safety.save_report(save_junit, 'safety-report.junit', junit_report)
 
         if exit_code and found_vulns:
             LOG.info('Exiting with default code for vulnerabilities found')
@@ -369,18 +386,18 @@ def validate(ctx, name, version, path):
     if not os.path.exists(path):
         click.secho(f'The path "{path}" does not exist.', fg='red', file=sys.stderr)
         sys.exit(EXIT_CODE_FAILURE)
-    
+
     if version not in ["3.0", "2.0", None]:
         click.secho(f'Version "{version}" is not a valid value, allowed values are 3.0 and 2.0. Use --path to specify the target file.', fg='red', file=sys.stderr)
         sys.exit(EXIT_CODE_FAILURE)
-    
+
     def fail_validation(e):
         click.secho(str(e).lstrip(), fg='red', file=sys.stderr)
         sys.exit(EXIT_CODE_FAILURE)
 
     if not version:
         version = "3.0"
-    
+
     result = ""
 
     if version == "3.0":
@@ -391,7 +408,7 @@ def validate(ctx, name, version, path):
             policy = load_policy_file(Path(path))
         except Exception as e:
             fail_validation(e)
-        
+
         click.secho(f"The Safety policy ({version}) file " \
                     "(Used for scan and system-scan commands) " \
                     "was successfully parsed " \
@@ -406,18 +423,18 @@ def validate(ctx, name, version, path):
             sys.exit(EXIT_CODE_FAILURE)
 
         del values['raw']
-        
+
         result = json.dumps(values, indent=4, default=str)
 
         click.secho("The Safety policy file " \
                     "(Valid only for the check command) " \
                     "was successfully parsed with the " \
                     "following values:", fg="green")
-    
+
     console.print_json(result)
 
 
-@cli.command(cls=SafetyCLILegacyCommand, 
+@cli.command(cls=SafetyCLILegacyCommand,
              help=CLI_CONFIGURE_HELP,
              utility_command=True)
 @click.option("--proxy-protocol", "-pr", type=click.Choice(['http', 'https']), default='https', cls=DependentOption,
@@ -447,8 +464,8 @@ def validate(ctx, name, version, path):
 @click.option("--save-to-system/--save-to-user", default=False, is_flag=True,
               help=CLI_CONFIGURE_SAVE_TO_SYSTEM)
 @click.pass_context
-def configure(ctx, proxy_protocol, proxy_host, proxy_port, proxy_timeout, 
-              proxy_required, organization_id, organization_name, stage, 
+def configure(ctx, proxy_protocol, proxy_host, proxy_port, proxy_timeout,
+              proxy_required, organization_id, organization_name, stage,
               save_to_system):
     """
     Configure global settings, like proxy settings and organization details
@@ -493,7 +510,7 @@ def configure(ctx, proxy_protocol, proxy_host, proxy_port, proxy_timeout,
             'host': proxy_host,
             'port': str(proxy_port)
         })
-        
+
     if not config.has_section(PROXY_SECTION_NAME):
         config.add_section(PROXY_SECTION_NAME)
 
@@ -597,7 +614,7 @@ def check_updates(ctx: typer.Context,
 
     if not data:
         raise SafetyException("No data found.")
-    
+
     console.print("[green]Safety CLI is authenticated:[/green]")
 
     from rich.padding import Padding
@@ -624,7 +641,7 @@ def check_updates(ctx: typer.Context,
             f"If Safety was installed from a requirements file, update Safety to version {latest_available_version} in that requirements file."
         )
         console.print()
-        # `pip -i <source_url> install safety=={latest_available_version}` OR 
+        # `pip -i <source_url> install safety=={latest_available_version}` OR
         console.print(f"Pip: To install the updated version of Safety directly via pip, run: `pip install safety=={latest_available_version}`")
 
     if console.quiet:
@@ -645,5 +662,5 @@ cli.add_command(typer.main.get_command(auth_app), "auth")
 
 cli.add_command(alert)
 
-if __name__ == "__main__":    
+if __name__ == "__main__":
     cli()

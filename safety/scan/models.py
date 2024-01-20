@@ -15,9 +15,9 @@ class FormatMixin:
         if format_sub is format_instance:
             return True
 
-        prefix =  format_sub.value.split('@')[0]
+        prefix = format_sub.value.split('@')[0]
         return prefix == format_instance.value
-    
+
     @property
     def version(self):
         """ Return the version of the format. """
@@ -25,7 +25,7 @@ class FormatMixin:
 
         if len(result) == 2:
             return result[1]
-        
+
         return None
 
 
@@ -35,12 +35,13 @@ class ScanOutput(FormatMixin, str, Enum):
     SPDX_2_3 = "spdx@2.3"
     SPDX_2_2 = "spdx@2.2"
     HTML = "html"
+    JUNIT = "junit"
 
     SCREEN = "screen"
     NONE = "none"
 
     def is_silent(self):
-        return self in (ScanOutput.JSON, ScanOutput.SPDX, ScanOutput.SPDX_2_3, ScanOutput.SPDX_2_2, ScanOutput.HTML)
+        return self in (ScanOutput.JSON, ScanOutput.SPDX, ScanOutput.SPDX_2_3, ScanOutput.SPDX_2_2, ScanOutput.HTML, ScanOutput.JUNIT)
 
 
 class ScanExport(FormatMixin, str, Enum):
@@ -48,16 +49,19 @@ class ScanExport(FormatMixin, str, Enum):
     SPDX = "spdx"
     SPDX_2_3 = "spdx@2.3"
     SPDX_2_2 = "spdx@2.2"
-    HTML = "html"    
+    HTML = "html"
+    JUNIT = "junit"
 
     def get_default_file_name(self, tag: int):
-        
+
         if self is ScanExport.JSON:
             return f"safety-report-{tag}.json"
         elif self in [ScanExport.SPDX, ScanExport.SPDX_2_3, ScanExport.SPDX_2_2]:
             return f"safety-report-spdx-{tag}.json"
         elif self is ScanExport.HTML:
             return f"safety-report-{tag}.html"
+        elif self is ScanExport.JUNIT:
+            return f"safety-report-junit-{tag}.xml"
         else:
             raise ValueError("Unsupported scan export type")
 
@@ -67,7 +71,7 @@ class SystemScanOutput(str, Enum):
     SCREEN = "screen"
 
     def is_silent(self):
-        return self in (SystemScanOutput.JSON,)   
+        return self in (SystemScanOutput.JSON,)
 
 class SystemScanExport(str, Enum):
     JSON = "json"
@@ -78,4 +82,4 @@ class UnverifiedProjectModel():
     project_path: Path
     created: bool
     name: Optional[str] = None
-    url_path: Optional[str] = None    
+    url_path: Optional[str] = None
